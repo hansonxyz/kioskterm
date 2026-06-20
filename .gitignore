@@ -1,0 +1,23 @@
+# Build output
+bin/
+obj/
+dist/
+dist-fd/
+
+# Visual Studio / Rider / VS Code
+.vs/
+.idea/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Throwaway test / verification artifacts
+verify-*.png
+
+# Logs and temp files
+*.log
+*.tmp
+*~
+Thumbs.db
+desktop.ini

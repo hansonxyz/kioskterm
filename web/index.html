@@ -1,0 +1,79 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy"
+      content="default-src 'none'; style-src 'self' 'unsafe-inline'; script-src 'self'; font-src 'self'; img-src 'self' data:;">
+<link rel="stylesheet" href="xterm.min.css">
+<style>
+  html, body {
+    height: 100%;
+    margin: 0;
+    background: #0C0C0C;
+    overflow: hidden;
+  }
+  #root {
+    box-sizing: border-box;
+    width: 100vw;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    color: #CCCCCC;
+    font-family: 'Cascadia Mono', 'Cascadia Code', 'Consolas', monospace;
+  }
+  /* Header is a row: a flexible caption column on the left and an optional logo
+     pinned to the upper-right. The header's height is driven by the caption
+     (two blank lines + message + two blank lines); the logo is constrained to
+     that height. The caption centers within the space left of the logo. */
+  #header {
+    flex: 0 0 auto;
+    display: flex;
+    flex-direction: row;
+    align-items: stretch;
+    user-select: none;
+  }
+  #header-text {
+    flex: 1 1 auto;
+    min-width: 0;
+    text-align: center;   /* centers each line between the left edge and the logo */
+    white-space: pre;     /* preserves the blank padding lines and any \n in the caption */
+  }
+  #header-logo {
+    flex: 0 0 auto;
+    display: none;             /* shown only when a logo is supplied */
+    align-items: flex-start;   /* top... */
+    justify-content: flex-end; /* ...right */
+  }
+  #header-logo img {
+    /* max-height is set from JS to the exact band height so the logo can never
+       inflate the header (a flex row otherwise grows to its tallest child). */
+    max-width: 40vw;    /* safety cap for very wide logos */
+    width: auto;
+    height: auto;
+    display: block;
+  }
+  #term {
+    flex: 1 1 auto;
+    min-height: 0;
+    width: 100%;
+  }
+  .xterm { height: 100%; }
+  /* Display-only terminal: hide the scrollbar (it would eat the right margin),
+     but keep the viewport scrollable so xterm can auto-scroll to the newest line. */
+  .xterm-viewport { scrollbar-width: none; -ms-overflow-style: none; }
+  .xterm-viewport::-webkit-scrollbar { width: 0; height: 0; display: none; }
+</style>
+</head>
+<body>
+<div id="root">
+  <div id="header">
+    <div id="header-text"></div>
+    <div id="header-logo"><img id="logo-img" alt=""></div>
+  </div>
+  <div id="term"></div>
+</div>
+<script src="xterm.min.js"></script>
+<script src="addon-fit.min.js"></script>
+<script src="boot.js"></script>
+</body>
+</html>
