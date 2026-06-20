@@ -14,6 +14,13 @@ until the script finishes — then cleans up after itself.
 > is deliberately left working (Windows reserves it), so a determined user can
 > still reach Task Manager. That's by design.
 
+## Download
+
+**[Download `kioskterm.exe` (v1.0)](https://github.com/hansonxyz/kioskterm/releases/download/v1.0/kioskterm.exe)** —
+a single self-contained executable for Windows 10/11 (x64); no .NET install
+required on the target. All builds are on the
+[releases page](https://github.com/hansonxyz/kioskterm/releases).
+
 ## What it does
 
 - **Borderless fullscreen** overlay on the primary monitor.
