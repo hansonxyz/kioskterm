@@ -14,6 +14,10 @@ internal sealed class MainForm : Form
     private readonly string? _logoPath;
     private readonly bool _allowInput;
     private readonly bool _testMode;
+    private readonly bool _deferReveal;   // --show-on-output-only: stay parked off-screen until real output
+    private System.Drawing.Rectangle _targetBounds;
+    private bool _revealed;
+    private readonly ContentScanner _contentScanner = new();
     private string? _logoServedName;
     private readonly WebView2 _web = new();
     private ConPty? _pty;
@@ -29,7 +33,7 @@ internal sealed class MainForm : Form
     public int ExitCode { get; private set; }
 
     public MainForm(string? header, string commandLine, bool keepAwake, string? logoPath,
-                    bool allowInput, bool testMode)
+                    bool allowInput, bool testMode, bool showOnOutputOnly)
     {
         _header = header;
         _commandLine = commandLine;
@@ -37,6 +41,7 @@ internal sealed class MainForm : Form
         _logoPath = logoPath;
         _allowInput = allowInput;
         _testMode = testMode;
+        _deferReveal = showOnOutputOnly && !testMode;   // --test always shows immediately
 
         TopMost = false;
         BackColor = System.Drawing.Color.Black;
@@ -89,47 +94,21 @@ internal sealed class MainForm : Form
     protected override async void OnLoad(EventArgs e)
     {
         base.OnLoad(e);
-        if (!_testMode) Bounds = Screen.PrimaryScreen!.Bounds;   // borderless fullscreen on the primary monitor
+        _targetBounds = _testMode ? Bounds : Screen.PrimaryScreen!.Bounds;
+        if (_deferReveal) Bounds = OffScreen(_targetBounds.Size);   // park off-screen, same size
+        else if (!_testMode) Bounds = _targetBounds;                // borderless fullscreen
         await InitWebViewAsync();
     }
 
     protected override void OnShown(EventArgs e)
     {
         base.OnShown(e);
+        if (_keepAwake) Native.PreventSleepAndDisplayOff();   // keep awake even while processing pre-output
 
-        // --test leaves the taskbar and keys alone so the environment stays recoverable.
-        if (!_testMode)
-        {
-            Native.HideTaskbar();
-            Native.InstallKeyboardHook(blockCtrlCombos: _allowInput);
-
-            // Once a second, keep the shell suppressed: dismiss the Start/Search
-            // menu if Windows opened it, and re-hide the taskbar if explorer.exe
-            // restarted (which spawns a fresh, visible one). (Off in --test.)
-            _shellWatch = new System.Windows.Forms.Timer { Interval = 1000 };
-            _shellWatch.Tick += (_, _) =>
-            {
-                Native.DismissStartMenuIfOpen();
-                Native.EnsureTaskbarsHidden();
-            };
-            _shellWatch.Start();
-        }
-        if (_keepAwake) Native.PreventSleepAndDisplayOff();
-
-        if (_allowInput)
-        {
-            // Take and hold the foreground; reclaim it when a spawned window closes.
-            Native.ForceForeground(Handle);
-            _web.Focus();
-            Native.StartForegroundWatch(Handle, () =>
-            {
-                if (!IsDisposed) { _web.Focus(); PostToWeb("focus"); }
-            });
-        }
-        else
-        {
-            SinkToBottom();
-        }
+        if (!_deferReveal)
+            Reveal();
+        // else: stay parked off-screen with no lockdown until the command emits
+        // real output (see StartPty); a do-nothing runner exits invisibly.
 
         _watchdog = new System.Windows.Forms.Timer { Interval = WatchdogMs };
         _watchdog.Tick += (_, _) =>
@@ -142,6 +121,61 @@ internal sealed class MainForm : Form
             }
         };
         _watchdog.Start();
+    }
+
+    // Brings the overlay on-screen and engages the lockdown. Runs immediately on
+    // show, or is deferred to the first real output under --show-on-output-only.
+    private void Reveal()
+    {
+        if (_revealed) return;
+        _revealed = true;
+
+        Bounds = _targetBounds;   // on-screen (a no-op unless we were parked off-screen)
+
+        // --test leaves the taskbar and keys alone so the environment stays recoverable.
+        if (!_testMode)
+        {
+            Native.HideTaskbar();
+            Native.InstallKeyboardHook(blockCtrlCombos: _allowInput);
+
+            // Once a second, keep the shell suppressed: dismiss the Start/Search
+            // menu if Windows opened it, and re-hide the taskbar if explorer.exe
+            // restarted (which spawns a fresh, visible one).
+            _shellWatch = new System.Windows.Forms.Timer { Interval = 1000 };
+            _shellWatch.Tick += (_, _) =>
+            {
+                Native.DismissStartMenuIfOpen();
+                Native.EnsureTaskbarsHidden();
+            };
+            _shellWatch.Start();
+        }
+
+        if (_allowInput)
+        {
+            // Take and hold the foreground; reclaim it when a spawned window closes.
+            Native.ForceForeground(Handle);
+            Native.StartForegroundWatch(Handle, () =>
+            {
+                if (!IsDisposed) { _web.Focus(); PostToWeb("focus"); }
+            });
+            if (_ptyStarted) EnableInputUi();   // deferred reveal: page is already up; else the ready handler does it
+        }
+        else if (!_testMode)
+        {
+            SinkToBottom();
+        }
+    }
+
+    private void EnableInputUi()
+    {
+        _web.Focus();
+        PostToWeb("input:1");   // tell the page to accept keystrokes and focus the terminal
+    }
+
+    private static System.Drawing.Rectangle OffScreen(System.Drawing.Size size)
+    {
+        var vs = SystemInformation.VirtualScreen;
+        return new System.Drawing.Rectangle(vs.Right + 1000, vs.Top, size.Width, size.Height);
     }
 
     private void SinkToBottom()
@@ -223,11 +257,10 @@ internal sealed class MainForm : Form
             if (_logoServedName != null)
                 PostToWeb("l:" + _logoServedName);
 
-            if (_allowInput)
-            {
-                _web.Focus();
-                PostToWeb("input:1");   // tell the page to accept keystrokes and focus the terminal
-            }
+            // If already revealed (the normal case), enable input now; under a
+            // deferred reveal, Reveal() enables it once we come on-screen.
+            if (_allowInput && _revealed)
+                EnableInputUi();
             return;
         }
 
@@ -260,7 +293,17 @@ internal sealed class MainForm : Form
         {
             // Marshal to the UI thread; WebView2 is single-threaded.
             if (IsDisposed) return;
-            try { BeginInvoke(() => PostToWeb("o:" + Convert.ToBase64String(chunk))); }
+            try
+            {
+                BeginInvoke(() =>
+                {
+                    // --show-on-output-only: reveal on the first non-whitespace,
+                    // non-escape-sequence byte.
+                    if (_deferReveal && !_revealed && _contentScanner.HasContent(chunk))
+                        Reveal();
+                    PostToWeb("o:" + Convert.ToBase64String(chunk));
+                });
+            }
             catch (InvalidOperationException) { /* handle gone */ }
         };
         _pty.Exited += code =>
@@ -289,6 +332,7 @@ internal sealed class MainForm : Form
             try { File.WriteAllText(Path.Combine(Path.GetTempPath(), "kioskterm-error.log"), detail + "\r\n" + ex); }
             catch { /* best effort */ }
 
+            Reveal();   // a launch failure is worth showing even under --show-on-output-only
             PostToWeb("o:" + Convert.ToBase64String(
                 Encoding.UTF8.GetBytes("\r\n\x1b[31m" + detail.Replace("\r\n", "\r\n") + "\x1b[0m\r\n")));
 
@@ -370,5 +414,46 @@ internal sealed class MainForm : Form
             catch { /* best effort */ }
         }
         base.Dispose(disposing);
+    }
+
+    /// <summary>
+    /// Scans the raw PTY byte stream for the first "real" output — a printable,
+    /// non-whitespace character that isn't part of a terminal escape sequence
+    /// (colors, cursor moves, window-title sets, etc.). Stateful across chunks.
+    /// </summary>
+    private sealed class ContentScanner
+    {
+        private enum S { Normal, Esc, Csi, Osc, OscEsc }
+        private S _s = S.Normal;
+
+        public bool HasContent(byte[] data)
+        {
+            foreach (byte b in data)
+            {
+                switch (_s)
+                {
+                    case S.Normal:
+                        if (b == 0x1B) _s = S.Esc;               // start of an escape sequence
+                        else if (b > 0x20 && b != 0x7F) return true;  // printable, non-space, non-DEL
+                        break;                                    // (<=0x20 control/space and DEL are ignored)
+                    case S.Esc:
+                        if (b == (byte)'[') _s = S.Csi;           // CSI: ESC [
+                        else if (b == (byte)']') _s = S.Osc;      // OSC: ESC ]
+                        else _s = S.Normal;                       // 2-byte / unsupported escape — consume one byte
+                        break;
+                    case S.Csi:
+                        if (b >= 0x40 && b <= 0x7E) _s = S.Normal; // final byte ends the CSI sequence
+                        break;
+                    case S.Osc:
+                        if (b == 0x07) _s = S.Normal;             // BEL terminates OSC
+                        else if (b == 0x1B) _s = S.OscEsc;        // maybe ST (ESC \)
+                        break;
+                    case S.OscEsc:
+                        _s = (b == (byte)'\\') ? S.Normal : S.Osc;
+                        break;
+                }
+            }
+            return false;
+        }
     }
 }

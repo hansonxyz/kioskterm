@@ -41,6 +41,9 @@ required on the target. All builds are on the
 - **Auto-exits** when the wrapped command exits, restoring the environment.
 - **Display-only by default**, or a focusable **input mode** for interactive
   scripts (see [Modes](#modes)).
+- **Deferred reveal** (`--show-on-output-only`) — start a command but only take
+  over the screen once it emits real output, so a runner with nothing to do
+  never disturbs the user.
 - Ships as a **single self-contained `.exe`** — no .NET or other dependency on
   the target machine (only the WebView2 runtime, which is present on current
   Windows 10/11).
@@ -61,6 +64,7 @@ Everything after `--` is the command run inside the pseudo-console (ConPTY).
 | `--allow-sleep` | Permit normal sleep/display timeout. Default is to keep the machine awake. |
 | `--allow-input`, `--input` | Make the terminal focusable and accept typing (see [Modes](#modes)). Blocks all `Ctrl` combos and `Alt+Tab`. |
 | `--test` | Safe testing harness — titled resizable window, taskbar visible, **no key blocking**, so you can always recover the session. |
+| `--show-on-output-only` | Start the command but stay hidden (no taskbar hiding, no key blocking) until it emits its first real output. A run that does nothing and exits never shows the overlay at all. |
 | `--` | Separator; everything after it is the command and its arguments. |
 
 ### Examples
@@ -83,6 +87,13 @@ Develop/test safely (window has a close button, taskbar stays, keys aren't block
 
 ```powershell
 kioskterm.exe --allow-input --test -- powershell -NoProfile -File C:\enroll.ps1
+```
+
+Wrap a runner that often has nothing to do — the overlay only appears if the
+runner actually produces output:
+
+```powershell
+kioskterm.exe --show-on-output-only --header "Applying updates..." -- C:\provision\run-pending.cmd
 ```
 
 > **PowerShell argument quoting:** call the exe directly (`& kioskterm.exe ...`)
