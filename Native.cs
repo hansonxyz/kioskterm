@@ -346,4 +346,64 @@ internal static class Native
         return c.Length == 0 || c == "Progman" || c == "WorkerW"
             || c == "Shell_TrayWnd" || c == "Shell_SecondaryTrayWnd";
     }
+
+    // ---- Start-menu auto-dismiss --------------------------------------------
+
+    private const uint INPUT_KEYBOARD   = 1;
+    private const uint KEYEVENTF_KEYUP  = 0x0002;
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct MOUSEINPUT { public int dx, dy; public uint mouseData, dwFlags, time; public IntPtr dwExtraInfo; }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct KEYBDINPUT { public ushort wVk, wScan; public uint dwFlags, time; public IntPtr dwExtraInfo; }
+
+    [StructLayout(LayoutKind.Explicit)]
+    private struct InputUnion
+    {
+        [FieldOffset(0)] public MOUSEINPUT mi;   // present only so INPUT is sized correctly
+        [FieldOffset(0)] public KEYBDINPUT ki;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct INPUT { public uint type; public InputUnion U; }
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern uint SendInput(uint nInputs, INPUT[] pInputs, int cbSize);
+
+    /// <summary>
+    /// If the Start (or Search) menu is currently the foreground window — which is
+    /// how Windows 11 sometimes greets a fresh login — sends Esc to close it.
+    /// Esc is delivered to the focused Start window without disturbing our z-order.
+    /// </summary>
+    public static void DismissStartMenuIfOpen()
+    {
+        if (!IsStartMenuForeground()) return;
+
+        var inputs = new INPUT[2];
+        inputs[0].type = INPUT_KEYBOARD; inputs[0].U.ki.wVk = (ushort)VK_ESCAPE;
+        inputs[1].type = INPUT_KEYBOARD; inputs[1].U.ki.wVk = (ushort)VK_ESCAPE;
+        inputs[1].U.ki.dwFlags = KEYEVENTF_KEYUP;
+        SendInput(2, inputs, Marshal.SizeOf<INPUT>());
+    }
+
+    private static bool IsStartMenuForeground()
+    {
+        IntPtr fg = GetForegroundWindow();
+        if (fg == IntPtr.Zero) return false;
+        GetWindowThreadProcessId(fg, out uint pid);
+        if (pid == 0) return false;
+        try
+        {
+            using var p = Process.GetProcessById((int)pid);
+            string n = p.ProcessName;
+            // Win11 Start is hosted by StartMenuExperienceHost; Search by SearchHost.
+            return n.Equals("StartMenuExperienceHost", StringComparison.OrdinalIgnoreCase)
+                || n.Equals("SearchHost", StringComparison.OrdinalIgnoreCase);
+        }
+        catch
+        {
+            return false;
+        }
+    }
 }

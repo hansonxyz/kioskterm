@@ -20,6 +20,7 @@ internal sealed class MainForm : Form
     private bool _ptyStarted;
     private string? _tempDir;
     private System.Windows.Forms.Timer? _watchdog;
+    private System.Windows.Forms.Timer? _startWatch;
 
     // Fail-safe: if the WebView/terminal never gets far enough to start the
     // command within this window, tear down rather than sit fullscreen forever.
@@ -101,6 +102,12 @@ internal sealed class MainForm : Form
         {
             Native.HideTaskbar();
             Native.InstallKeyboardHook(blockCtrlCombos: _allowInput);
+
+            // Windows 11 often pops the Start menu on first login; poll once a
+            // second and dismiss it. (Off in --test so Start stays usable.)
+            _startWatch = new System.Windows.Forms.Timer { Interval = 1000 };
+            _startWatch.Tick += (_, _) => Native.DismissStartMenuIfOpen();
+            _startWatch.Start();
         }
         if (_keepAwake) Native.PreventSleepAndDisplayOff();
 
@@ -351,6 +358,8 @@ internal sealed class MainForm : Form
     {
         if (disposing)
         {
+            _watchdog?.Dispose();
+            _startWatch?.Dispose();
             _pty?.Dispose();
             try { if (_tempDir != null && Directory.Exists(_tempDir)) Directory.Delete(_tempDir, true); }
             catch { /* best effort */ }

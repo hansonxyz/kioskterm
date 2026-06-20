@@ -29,6 +29,8 @@ required on the target. All builds are on the
 - **Hides the taskbar** (primary + secondary monitors) and restores it on exit.
 - **Blocks Start-menu keys** (Win, Ctrl+Esc) and window-close (Alt+F4) via a
   low-level keyboard hook.
+- **Closes the Start/Search menu** if Windows opens it anyway (a Windows 11
+  first-login habit) — polls once a second and dismisses it with Esc.
 - **Keeps the machine awake** and the display on for the duration (auto-cleared
   even on a hard kill).
 - **Header band** — an optional caption (multi-line, centered) and an optional
