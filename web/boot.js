@@ -132,6 +132,18 @@
 
   window.addEventListener('resize', doFit);
 
+  // Auto-hide the mouse cursor after a couple seconds of no movement over the
+  // window (like a video player); any movement brings it back.
+  var cursorTimer;
+  function hideCursor() { document.body.classList.add('hide-cursor'); }
+  function wakeCursor() {
+    document.body.classList.remove('hide-cursor');
+    clearTimeout(cursorTimer);
+    cursorTimer = setTimeout(hideCursor, 2000);
+  }
+  document.addEventListener('mousemove', wakeCursor, true);
+  wakeCursor();
+
   // First layout, then tell the host our size so it can size & start the PTY.
   doFit();
   if (host) host.postMessage('ready');

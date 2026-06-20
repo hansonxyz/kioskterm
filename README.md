@@ -26,7 +26,8 @@ required on the target. All builds are on the
 - **Borderless fullscreen** overlay on the primary monitor.
 - **Rear-most z-order** — stays behind any window spawned *after* it, so an
   unattended installer's own UI is visible on top while it runs.
-- **Hides the taskbar** (primary + secondary monitors) and restores it on exit.
+- **Hides the taskbar** (primary + secondary monitors), re-hiding it within a
+  second if `explorer.exe` restarts, and restores it on exit.
 - **Blocks Start-menu keys** (Win, Ctrl+Esc) and window-close (Alt+F4) via a
   low-level keyboard hook.
 - **Closes the Start/Search menu** if Windows opens it anyway (a Windows 11
@@ -35,6 +36,8 @@ required on the target. All builds are on the
   even on a hard kill).
 - **Header band** — an optional caption (multi-line, centered) and an optional
   logo pinned top-right, sized to the header height.
+- **Auto-hides the mouse cursor** after a couple seconds idle over the window
+  (like a video player); it returns on movement.
 - **Auto-exits** when the wrapped command exits, restoring the environment.
 - **Display-only by default**, or a focusable **input mode** for interactive
   scripts (see [Modes](#modes)).

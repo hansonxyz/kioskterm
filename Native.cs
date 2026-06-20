@@ -76,6 +76,9 @@ internal static class Native
     private static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
 
     [DllImport("user32.dll")]
+    private static extern bool IsWindowVisible(IntPtr hWnd);
+
+    [DllImport("user32.dll")]
     private static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);
 
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
@@ -88,22 +91,34 @@ internal static class Native
     public static void HideTaskbar()
     {
         _hiddenBars.Clear();
+        EnsureTaskbarsHidden();
+    }
 
-        IntPtr primary = FindWindow("Shell_TrayWnd", null);
-        if (primary != IntPtr.Zero) { ShowWindow(primary, SW_HIDE); _hiddenBars.Add(primary); }
+    /// <summary>
+    /// Hides any currently-visible taskbar. Safe to call repeatedly — used by a
+    /// 1-second poll so a restarted explorer.exe (which spawns a fresh, visible
+    /// Shell_TrayWnd) gets re-hidden. Re-finds the window each call, so it tracks
+    /// the new handle after a restart.
+    /// </summary>
+    public static void EnsureTaskbarsHidden()
+    {
+        HideBar(FindWindow("Shell_TrayWnd", null));
 
         // Secondary-monitor taskbars (there can be several).
         EnumWindows((hwnd, _) =>
         {
             var sb = new StringBuilder(64);
             GetClassName(hwnd, sb, sb.Capacity);
-            if (sb.ToString() == "Shell_SecondaryTrayWnd")
-            {
-                ShowWindow(hwnd, SW_HIDE);
-                _hiddenBars.Add(hwnd);
-            }
+            if (sb.ToString() == "Shell_SecondaryTrayWnd") HideBar(hwnd);
             return true;
         }, IntPtr.Zero);
+    }
+
+    private static void HideBar(IntPtr h)
+    {
+        if (h == IntPtr.Zero) return;
+        if (IsWindowVisible(h)) ShowWindow(h, SW_HIDE);
+        if (!_hiddenBars.Contains(h)) _hiddenBars.Add(h);
     }
 
     public static void RestoreTaskbar()

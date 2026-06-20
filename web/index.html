@@ -62,6 +62,8 @@
      but keep the viewport scrollable so xterm can auto-scroll to the newest line. */
   .xterm-viewport { scrollbar-width: none; -ms-overflow-style: none; }
   .xterm-viewport::-webkit-scrollbar { width: 0; height: 0; display: none; }
+  /* Hide the mouse cursor after a couple seconds idle over the window. */
+  body.hide-cursor, body.hide-cursor * { cursor: none !important; }
 </style>
 </head>
 <body>
