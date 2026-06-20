@@ -1,6 +1,6 @@
-# Building BareTerm
+# Building KioskTerm
 
-BareTerm is a Windows-only .NET 8 / WinForms app that hosts an `xterm.js`
+KioskTerm is a Windows-only .NET 8 / WinForms app that hosts an `xterm.js`
 terminal in WebView2 and runs a command inside a Windows pseudo-console
 (ConPTY). It builds to a single self-contained `.exe` with no runtime
 dependency on the target machine.
@@ -18,19 +18,19 @@ No Node.js / npm toolchain is required — the `xterm.js` assets are vendored
 
 ## Build
 
-From the project root (`bareterm.csproj` lives here):
+From the project root (`kioskterm.csproj` lives here):
 
 ```powershell
 # Debug build (fast; framework-dependent, for local iteration)
 dotnet build -c Debug
 
-# Release: single self-contained exe -> .\dist\bareterm.exe (~69 MB, bundles the .NET runtime)
+# Release: single self-contained exe -> .\dist\kioskterm.exe (~69 MB, bundles the .NET runtime)
 dotnet publish -c Release -o .\dist
 ```
 
 The publish settings (single-file, self-contained, win-x64, compressed) are
-baked into `bareterm.csproj`, so `dotnet publish -c Release -o .\dist` is all
-that's needed. The resulting `dist\bareterm.exe` runs on a clean Windows box
+baked into `kioskterm.csproj`, so `dotnet publish -c Release -o .\dist` is all
+that's needed. The resulting `dist\kioskterm.exe` runs on a clean Windows box
 with no .NET installed.
 
 > **Smaller exe (optional):** a framework-dependent build is ~200 KB instead of
@@ -41,13 +41,13 @@ with no .NET installed.
 ## Run / smoke test
 
 ```powershell
-.\dist\bareterm.exe --header "Configuring Windows for first use...\n\nPlease do not turn off your computer" `
+.\dist\kioskterm.exe --header "Configuring Windows for first use...\n\nPlease do not turn off your computer" `
     --logo C:\path\to\logo.png `
     -- powershell -NoProfile -ExecutionPolicy Bypass -File C:\setup.ps1
 ```
 
 > **Argument quoting:** when launching from PowerShell, prefer calling the exe
-> directly (`& bareterm.exe ...`) or pass `-ArgumentList` as a single,
+> directly (`& kioskterm.exe ...`) or pass `-ArgumentList` as a single,
 > pre-quoted string. `Start-Process -ArgumentList @(...)` silently drops quotes
 > around multi-word values (e.g. the `--header` text), which mis-parses the
 > command line.
@@ -55,7 +55,7 @@ with no .NET installed.
 ## Project layout
 
 ```
-bareterm.csproj      Project + single-file publish settings; embeds web\ as resources
+kioskterm.csproj      Project + single-file publish settings; embeds web\ as resources
 app.manifest         asInvoker + DPI awareness (PerMonitorV2 via project property)
 Program.cs           Entry point: CLI parsing (--header/--logo/--minimize-others/--allow-sleep, -- command)
 MainForm.cs          Borderless fullscreen WinForms host; WebView2 init, IPC, watchdog, temp asset extraction
@@ -70,7 +70,7 @@ web\addon-fit.min.js Vendored xterm fit addon
 
 The `web\` folder is embedded into the exe as resources (`<EmbeddedResource>` in
 the csproj) and extracted to a per-process temp directory at runtime, where it's
-served to WebView2 via a virtual host (`https://bareterm.local/`).
+served to WebView2 via a virtual host (`https://kioskterm.local/`).
 
 ## Frontend assets
 

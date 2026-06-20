@@ -1,4 +1,4 @@
-// BareTerm frontend bootstrap. Kept as an external file so the page can run
+// KioskTerm frontend bootstrap. Kept as an external file so the page can run
 // under a strict Content-Security-Policy (no inline scripts).
 (function () {
   "use strict";

@@ -3,7 +3,7 @@ using System.Runtime.InteropServices;
 using System.Text;
 using Microsoft.Win32.SafeHandles;
 
-namespace BareTerm;
+namespace KioskTerm;
 
 /// <summary>
 /// Runs a command inside a Windows pseudo-console (ConPTY) and streams its raw

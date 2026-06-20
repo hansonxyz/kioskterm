@@ -2,7 +2,7 @@ using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text;
 
-namespace BareTerm;
+namespace KioskTerm;
 
 /// <summary>
 /// The Win32 layer that makes the overlay behave: hide the taskbar, sink the

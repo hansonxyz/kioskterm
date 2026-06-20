@@ -8,8 +8,8 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <AssemblyName>bareterm</AssemblyName>
-    <RootNamespace>BareTerm</RootNamespace>
+    <AssemblyName>kioskterm</AssemblyName>
+    <RootNamespace>KioskTerm</RootNamespace>
     <ApplicationManifest>app.manifest</ApplicationManifest>
 
     <!-- Single self-contained exe with no runtime dependency on the target box -->

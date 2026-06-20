@@ -4,7 +4,7 @@ using System.Text;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.WinForms;
 
-namespace BareTerm;
+namespace KioskTerm;
 
 internal sealed class MainForm : Form
 {
@@ -38,7 +38,7 @@ internal sealed class MainForm : Form
         StartPosition = FormStartPosition.Manual;
         BackColor = System.Drawing.Color.Black;
         KeyPreview = false;
-        Text = "BareTerm";
+        Text = "KioskTerm";
 
         _web.Dock = DockStyle.Fill;
         _web.DefaultBackgroundColor = System.Drawing.Color.Black;
@@ -118,7 +118,7 @@ internal sealed class MainForm : Form
         _tempDir = ExtractWebAssets();
         _logoServedName = CopyLogo(_tempDir);
 
-        string userData = Path.Combine(Path.GetTempPath(), "bareterm-wv2-" +
+        string userData = Path.Combine(Path.GetTempPath(), "kioskterm-wv2-" +
             Environment.ProcessId.ToString());
         var env = await CoreWebView2Environment.CreateAsync(null, userData);
         await _web.EnsureCoreWebView2Async(env);
@@ -136,8 +136,8 @@ internal sealed class MainForm : Form
         core.WebMessageReceived += OnWebMessage;
 
         core.SetVirtualHostNameToFolderMapping(
-            "bareterm.local", _tempDir, CoreWebView2HostResourceAccessKind.Allow);
-        core.Navigate("https://bareterm.local/index.html");
+            "kioskterm.local", _tempDir, CoreWebView2HostResourceAccessKind.Allow);
+        core.Navigate("https://kioskterm.local/index.html");
     }
 
     private void OnWebMessage(object? sender, CoreWebView2WebMessageReceivedEventArgs e)
@@ -211,7 +211,7 @@ internal sealed class MainForm : Form
             int code = ex is System.ComponentModel.Win32Exception w ? w.NativeErrorCode : -1;
             string detail = $"Failed to start command (win32={code}): {ex.Message}\r\ncommand line: {_commandLine}";
 
-            try { File.WriteAllText(Path.Combine(Path.GetTempPath(), "bareterm-error.log"), detail + "\r\n" + ex); }
+            try { File.WriteAllText(Path.Combine(Path.GetTempPath(), "kioskterm-error.log"), detail + "\r\n" + ex); }
             catch { /* best effort */ }
 
             PostToWeb("o:" + Convert.ToBase64String(
@@ -238,11 +238,11 @@ internal sealed class MainForm : Form
 
     private static string ExtractWebAssets()
     {
-        string dir = Path.Combine(Path.GetTempPath(), "bareterm-web-" + Environment.ProcessId.ToString());
+        string dir = Path.Combine(Path.GetTempPath(), "kioskterm-web-" + Environment.ProcessId.ToString());
         Directory.CreateDirectory(dir);
 
         var asm = Assembly.GetExecutingAssembly();
-        const string prefix = "BareTerm.web.";
+        const string prefix = "KioskTerm.web.";
         foreach (string name in asm.GetManifestResourceNames())
         {
             if (!name.StartsWith(prefix)) continue;
@@ -256,7 +256,7 @@ internal sealed class MainForm : Form
     }
 
     // Copies the supplied logo into the served folder and returns the filename to
-    // reference from the page (served from https://bareterm.local/, i.e. CSP 'self').
+    // reference from the page (served from https://kioskterm.local/, i.e. CSP 'self').
     private string? CopyLogo(string dir)
     {
         if (string.IsNullOrEmpty(_logoPath) || !File.Exists(_logoPath)) return null;

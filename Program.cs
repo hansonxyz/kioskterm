@@ -1,6 +1,6 @@
 using System.Text;
 
-namespace BareTerm;
+namespace KioskTerm;
 
 internal static class Program
 {
@@ -8,7 +8,7 @@ internal static class Program
     private static int Main(string[] rawArgs)
     {
         // Usage:
-        //   bareterm.exe [--header "Text to show up top"] -- <command> [args...]
+        //   kioskterm.exe [--header "Text to show up top"] -- <command> [args...]
         //
         // Everything after the "--" separator is the command line that gets run
         // inside the pseudo-console. If there is no "--", the first non-flag token
@@ -69,16 +69,16 @@ internal static class Program
         if (command.Count == 0)
         {
             System.Windows.Forms.MessageBox.Show(
-                "BareTerm — fullscreen, rear-most, input-locked terminal overlay.\n\n" +
-                "Usage:\n  bareterm.exe [--header \"Caption text\"] [--minimize-others] -- <command> [args...]\n\n" +
+                "KioskTerm — fullscreen, rear-most, input-locked terminal overlay.\n\n" +
+                "Usage:\n  kioskterm.exe [--header \"Caption text\"] [--minimize-others] -- <command> [args...]\n\n" +
                 "Options:\n" +
                 "  --header, -h <text>     Caption shown in the reserved header area.\n" +
                 "  --logo, -l <path>       Image shown top-right, sized to the header height.\n" +
                 "  --minimize-others, -m   Minimize all other windows on launch (handy for testing).\n" +
                 "  --allow-sleep           Allow normal sleep/display timeout (default: kept awake).\n\n" +
-                "Example:\n  bareterm.exe --header \"Configuring Windows for first use...\" -- " +
+                "Example:\n  kioskterm.exe --header \"Configuring Windows for first use...\" -- " +
                 "powershell -NoProfile -ExecutionPolicy Bypass -File C:\\setup.ps1",
-                "BareTerm", System.Windows.Forms.MessageBoxButtons.OK,
+                "KioskTerm", System.Windows.Forms.MessageBoxButtons.OK,
                 System.Windows.Forms.MessageBoxIcon.Information);
             return 1;
         }
