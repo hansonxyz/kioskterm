@@ -16,10 +16,10 @@ until the script finishes — then cleans up after itself.
 
 ## Download
 
-**[Download `kioskterm.exe` (v1.0)](https://github.com/hansonxyz/kioskterm/releases/download/v1.0/kioskterm.exe)** —
+**[Download the latest `kioskterm.exe`](https://github.com/hansonxyz/kioskterm/releases/latest/download/kioskterm.exe)** —
 a single self-contained executable for Windows 10/11 (x64); no .NET install
 required on the target. All builds are on the
-[releases page](https://github.com/hansonxyz/kioskterm/releases).
+[releases page](https://github.com/hansonxyz/kioskterm/releases/latest).
 
 ## What it does
 
