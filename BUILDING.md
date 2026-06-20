@@ -57,10 +57,10 @@ with no .NET installed.
 ```
 kioskterm.csproj      Project + single-file publish settings; embeds web\ as resources
 app.manifest         asInvoker + DPI awareness (PerMonitorV2 via project property)
-Program.cs           Entry point: CLI parsing (--header/--logo/--minimize-others/--allow-sleep, -- command)
-MainForm.cs          Borderless fullscreen WinForms host; WebView2 init, IPC, watchdog, temp asset extraction
-ConPty.cs            ConPTY pseudo-console: spawn the command, stream VT output, resize, exit handling
-Native.cs            Win32: taskbar hide/restore, HWND_BOTTOM rear-most, keyboard hook, keep-awake, minimize-all
+Program.cs           Entry point: CLI parsing (--header/--logo/--minimize-others/--allow-sleep/--allow-input/--test, -- command)
+MainForm.cs          WinForms host (locked vs input mode); WebView2 init, IPC, input forwarding, watchdog, temp asset extraction
+ConPty.cs            ConPTY pseudo-console: spawn the command, stream VT output, write stdin, resize, exit handling
+Native.cs            Win32: taskbar hide/restore, HWND_BOTTOM rear-most, keyboard hook, keep-awake, minimize-all, foreground grab/reclaim
 web\index.html       Terminal page: header band (caption + logo) and #term; CSP; scrollbar hidden
 web\boot.js          Frontend bootstrap: xterm + fit addon, header/logo layout, host<->page messaging
 web\xterm.min.js     Vendored xterm.js (see below)

@@ -89,6 +89,14 @@ internal sealed class ConPty : IDisposable
             ResizePseudoConsole(_hPC, new COORD { X = cols, Y = rows });
     }
 
+    /// <summary>Writes user input (xterm-encoded key sequences) to the console's stdin.</summary>
+    public void WriteInput(string data)
+    {
+        if (_inputWrite == IntPtr.Zero || string.IsNullOrEmpty(data)) return;
+        byte[] bytes = Encoding.UTF8.GetBytes(data);
+        WriteFile(_inputWrite, bytes, (uint)bytes.Length, out _, IntPtr.Zero);
+    }
+
     private STARTUPINFOEX ConfigureProcessThread()
     {
         var si = new STARTUPINFOEX();
@@ -232,4 +240,7 @@ internal sealed class ConPty : IDisposable
 
     [DllImport("kernel32.dll", SetLastError = true)]
     private static extern bool CloseHandle(IntPtr hObject);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool WriteFile(IntPtr hFile, byte[] lpBuffer, uint nNumberOfBytesToWrite, out uint lpNumberOfBytesWritten, IntPtr lpOverlapped);
 }

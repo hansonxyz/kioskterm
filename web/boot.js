@@ -96,6 +96,19 @@
     requestAnimationFrame(doFit);
   }
 
+  // Input mode: make the terminal accept keystrokes and forward them (already
+  // xterm-encoded: text, \r for Enter, escape sequences, etc.) to the host, which
+  // writes them to the console's stdin.
+  var inputEnabled = false;
+  function enableInput() {
+    if (inputEnabled) return;
+    inputEnabled = true;
+    term.options.disableStdin = false;
+    term.options.cursorBlink = true;
+    term.onData(function (d) { if (host) host.postMessage('i:' + d); });
+    term.focus();
+  }
+
   if (host) {
     host.addEventListener('message', function (e) {
       var m = e.data;
@@ -109,6 +122,10 @@
         setHeader(m.slice(2));
       } else if (m.charCodeAt(0) === 108 && m.charCodeAt(1) === 58) { // "l:" logo url
         setLogo(m.slice(2));
+      } else if (m === 'input:1') {                                  // enable keyboard input
+        enableInput();
+      } else if (m === 'focus') {                                    // reclaim terminal focus
+        term.focus();
       }
     });
   }

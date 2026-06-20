@@ -17,6 +17,8 @@ internal static class Program
         string? logoPath = null;
         bool minimizeOthers = false;
         bool keepAwake = true;   // default: keep the machine awake + display on while provisioning
+        bool allowInput = false; // default: display-only, no user input
+        bool testMode = false;   // safety harness: titled window, taskbar shown, no key blocking
         var command = new List<string>();
 
         int i = 0;
@@ -38,6 +40,16 @@ internal static class Program
             if (!inCommand && a == "--allow-sleep")
             {
                 keepAwake = false;
+                i++; continue;
+            }
+            if (!inCommand && (a == "--allow-input" || a == "--input"))
+            {
+                allowInput = true;
+                i++; continue;
+            }
+            if (!inCommand && a == "--test")
+            {
+                testMode = true;
                 i++; continue;
             }
             if (!inCommand && (a == "--header" || a == "-h"))
@@ -75,7 +87,9 @@ internal static class Program
                 "  --header, -h <text>     Caption shown in the reserved header area.\n" +
                 "  --logo, -l <path>       Image shown top-right, sized to the header height.\n" +
                 "  --minimize-others, -m   Minimize all other windows on launch (handy for testing).\n" +
-                "  --allow-sleep           Allow normal sleep/display timeout (default: kept awake).\n\n" +
+                "  --allow-sleep           Allow normal sleep/display timeout (default: kept awake).\n" +
+                "  --allow-input           Accept keyboard input (focusable terminal); blocks Ctrl combos.\n" +
+                "  --test                  Safe testing: titled window, taskbar shown, no key blocking.\n\n" +
                 "Example:\n  kioskterm.exe --header \"Configuring Windows for first use...\" -- " +
                 "powershell -NoProfile -ExecutionPolicy Bypass -File C:\\setup.ps1",
                 "KioskTerm", System.Windows.Forms.MessageBoxButtons.OK,
@@ -96,7 +110,7 @@ internal static class Program
         System.Windows.Forms.Application.EnableVisualStyles();
         System.Windows.Forms.Application.SetCompatibleTextRenderingDefault(false);
 
-        using var form = new MainForm(header, commandLine, keepAwake, logoPath);
+        using var form = new MainForm(header, commandLine, keepAwake, logoPath, allowInput, testMode);
         System.Windows.Forms.Application.Run(form);
         return form.ExitCode;
     }

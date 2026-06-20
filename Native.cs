@@ -15,6 +15,8 @@ internal static class Native
 {
     public const int WM_WINDOWPOSCHANGING = 0x0046;
     public const int WM_MOUSEACTIVATE     = 0x0021;
+    public const int WM_SYSCOMMAND        = 0x0112;
+    public const int SC_MINIMIZE          = 0xF020;
     public const int MA_NOACTIVATE        = 3;
 
     public static readonly IntPtr HWND_BOTTOM = new(1);
@@ -157,6 +159,12 @@ internal static class Native
     private const int VK_RWIN   = 0x5C;
     private const int VK_MENU    = 0x12; // Alt
     private const int VK_CONTROL = 0x11;
+    private const int VK_LCONTROL = 0xA2;
+    private const int VK_RCONTROL = 0xA3;
+
+    // When true (input mode), also swallow every Ctrl+<key> combo (so Ctrl+C can't
+    // kill the running script) and Alt+Tab.
+    private static bool _blockCtrlCombos;
 
     private const uint LLKHF_ALTDOWN = 0x20;
 
@@ -192,8 +200,9 @@ internal static class Native
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
     private static extern IntPtr GetModuleHandle(string? lpModuleName);
 
-    public static void InstallKeyboardHook()
+    public static void InstallKeyboardHook(bool blockCtrlCombos)
     {
+        _blockCtrlCombos = blockCtrlCombos;
         if (_hook != IntPtr.Zero) return;
         _proc = HookCallback;
         using var module = Process.GetCurrentProcess().MainModule!;
@@ -219,17 +228,122 @@ internal static class Native
             bool alt  = (info.flags & LLKHF_ALTDOWN) != 0 || (GetAsyncKeyState(VK_MENU) & 0x8000) != 0;
             bool ctrl = (GetAsyncKeyState(VK_CONTROL) & 0x8000) != 0;
 
-            // Block only what lets a user escape the overlay: opening the Start
-            // menu (Win / Ctrl+Esc) and closing the window (Alt+F4). Alt+Tab and
-            // Alt+Esc are intentionally left working.
+            // Always block what lets a user escape the overlay: opening the Start
+            // menu (Win / Ctrl+Esc) and closing the window (Alt+F4).
             bool block =
                 vk == VK_LWIN || vk == VK_RWIN ||           // Start menu (Win key)
                 (ctrl && vk == VK_ESCAPE) ||                // Start menu (Ctrl+Esc)
                 (alt  && vk == VK_F4);                      // close window
 
+            // Input mode also blocks every Ctrl+<key> combo (no Ctrl+C to kill the
+            // script) and Alt+Tab, while leaving ordinary typing untouched.
+            if (_blockCtrlCombos)
+            {
+                if (alt && vk == VK_TAB) block = true;
+                if (ctrl && vk != VK_CONTROL && vk != VK_LCONTROL && vk != VK_RCONTROL) block = true;
+            }
+
             if (block)
                 return (IntPtr)1; // swallow
         }
         return CallNextHookEx(_hook, nCode, wParam, lParam);
+    }
+
+    // ---- foreground grab + reclaim (input mode) -----------------------------
+
+    private const uint EVENT_SYSTEM_FOREGROUND = 0x0003;
+    private const uint WINEVENT_OUTOFCONTEXT   = 0x0000;
+    private const int  OBJID_WINDOW            = 0;
+
+    private delegate void WinEventDelegate(IntPtr hWinEventHook, uint eventType, IntPtr hwnd, int idObject, int idChild, uint dwEventThread, uint dwmsEventTime);
+
+    private static WinEventDelegate? _winEventProc;   // kept alive while hooked
+    private static IntPtr _winEventHook = IntPtr.Zero;
+    private static IntPtr _watchTarget = IntPtr.Zero;
+    private static Action? _onReclaim;
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr GetForegroundWindow();
+
+    [DllImport("user32.dll")]
+    private static extern bool SetForegroundWindow(IntPtr hWnd);
+
+    [DllImport("user32.dll")]
+    private static extern bool BringWindowToTop(IntPtr hWnd);
+
+    [DllImport("user32.dll")]
+    private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
+
+    [DllImport("user32.dll")]
+    private static extern bool AttachThreadInput(uint idAttach, uint idAttachTo, bool fAttach);
+
+    [DllImport("kernel32.dll")]
+    private static extern uint GetCurrentThreadId();
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr SetWinEventHook(uint eventMin, uint eventMax, IntPtr hmodWinEventProc, WinEventDelegate lpfnWinEventProc, uint idProcess, uint idThread, uint dwFlags);
+
+    [DllImport("user32.dll")]
+    private static extern bool UnhookWinEvent(IntPtr hWinEventHook);
+
+    /// <summary>
+    /// Pulls <paramref name="hwnd"/> to the foreground, working around the
+    /// foreground-lock by briefly attaching to the current foreground thread's input.
+    /// </summary>
+    public static void ForceForeground(IntPtr hwnd)
+    {
+        IntPtr fg = GetForegroundWindow();
+        uint fgThread = GetWindowThreadProcessId(fg, out _);
+        uint thisThread = GetCurrentThreadId();
+        bool attached = fgThread != 0 && fgThread != thisThread && AttachThreadInput(thisThread, fgThread, true);
+
+        ShowWindow(hwnd, SW_SHOW);
+        BringWindowToTop(hwnd);
+        SetForegroundWindow(hwnd);
+
+        if (attached) AttachThreadInput(thisThread, fgThread, false);
+    }
+
+    /// <summary>
+    /// Watches foreground changes; whenever focus falls to the shell/desktop
+    /// (i.e. nothing "real" is in front — e.g. a spawned installer just closed),
+    /// pulls our window back to the front and invokes <paramref name="onReclaim"/>.
+    /// </summary>
+    public static void StartForegroundWatch(IntPtr target, Action onReclaim)
+    {
+        _watchTarget = target;
+        _onReclaim = onReclaim;
+        if (_winEventHook != IntPtr.Zero) return;
+        _winEventProc = WinEventCallback;
+        _winEventHook = SetWinEventHook(EVENT_SYSTEM_FOREGROUND, EVENT_SYSTEM_FOREGROUND,
+            IntPtr.Zero, _winEventProc, 0, 0, WINEVENT_OUTOFCONTEXT);
+    }
+
+    public static void StopForegroundWatch()
+    {
+        if (_winEventHook != IntPtr.Zero) { UnhookWinEvent(_winEventHook); _winEventHook = IntPtr.Zero; }
+        _winEventProc = null;
+        _watchTarget = IntPtr.Zero;
+        _onReclaim = null;
+    }
+
+    private static void WinEventCallback(IntPtr hook, uint ev, IntPtr hwnd, int idObject, int idChild, uint thread, uint time)
+    {
+        if (_watchTarget == IntPtr.Zero || idObject != OBJID_WINDOW) return;
+        if (hwnd == _watchTarget) return;          // we're already in front
+        if (!IsShellOrDesktop(hwnd)) return;       // a real window has focus — leave it be
+
+        ForceForeground(_watchTarget);
+        _onReclaim?.Invoke();
+    }
+
+    private static bool IsShellOrDesktop(IntPtr hwnd)
+    {
+        if (hwnd == IntPtr.Zero) return true;
+        var sb = new StringBuilder(64);
+        GetClassName(hwnd, sb, sb.Capacity);
+        string c = sb.ToString();
+        return c.Length == 0 || c == "Progman" || c == "WorkerW"
+            || c == "Shell_TrayWnd" || c == "Shell_SecondaryTrayWnd";
     }
 }

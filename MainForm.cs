@@ -12,6 +12,8 @@ internal sealed class MainForm : Form
     private readonly string _commandLine;
     private readonly bool _keepAwake;
     private readonly string? _logoPath;
+    private readonly bool _allowInput;
+    private readonly bool _testMode;
     private string? _logoServedName;
     private readonly WebView2 _web = new();
     private ConPty? _pty;
@@ -25,36 +27,60 @@ internal sealed class MainForm : Form
 
     public int ExitCode { get; private set; }
 
-    public MainForm(string? header, string commandLine, bool keepAwake, string? logoPath)
+    public MainForm(string? header, string commandLine, bool keepAwake, string? logoPath,
+                    bool allowInput, bool testMode)
     {
         _header = header;
         _commandLine = commandLine;
         _keepAwake = keepAwake;
         _logoPath = logoPath;
+        _allowInput = allowInput;
+        _testMode = testMode;
 
-        FormBorderStyle = FormBorderStyle.None;
-        ShowInTaskbar = false;
-        TopMost = false;                 // we want the REAR of the z-order, not the front
-        StartPosition = FormStartPosition.Manual;
+        TopMost = false;
         BackColor = System.Drawing.Color.Black;
         KeyPreview = false;
-        Text = "KioskTerm";
+
+        if (_testMode)
+        {
+            // Safety harness: a normal titled, taskbar-visible, windowed form so
+            // there's always an obvious escape hatch (the close button, Alt+Tab,
+            // the taskbar) while we test input handling.
+            FormBorderStyle = FormBorderStyle.Sizable;
+            ShowInTaskbar = true;
+            StartPosition = FormStartPosition.CenterScreen;
+            ClientSize = new System.Drawing.Size(1100, 720);
+            Text = "KioskTerm (TEST MODE)";
+        }
+        else
+        {
+            FormBorderStyle = FormBorderStyle.None;
+            ShowInTaskbar = false;
+            StartPosition = FormStartPosition.Manual;
+            Text = "KioskTerm";
+        }
 
         _web.Dock = DockStyle.Fill;
         _web.DefaultBackgroundColor = System.Drawing.Color.Black;
-        _web.TabStop = false;
+        _web.TabStop = _allowInput;
         Controls.Add(_web);
     }
 
-    // Don't steal focus when shown — lets a spawned installer keep the foreground.
-    protected override bool ShowWithoutActivation => true;
+    // In locked (display-only) mode, don't steal focus when shown — lets a spawned
+    // installer keep the foreground. In input mode we do want to activate.
+    protected override bool ShowWithoutActivation => !_allowInput;
 
     protected override CreateParams CreateParams
     {
         get
         {
             var cp = base.CreateParams;
-            cp.ExStyle |= Native.WS_EX_NOACTIVATE | Native.WS_EX_TOOLWINDOW;
+            // Only the locked overlay is no-activate; input mode must be focusable.
+            if (!_allowInput)
+            {
+                cp.ExStyle |= Native.WS_EX_NOACTIVATE;
+                if (!_testMode) cp.ExStyle |= Native.WS_EX_TOOLWINDOW;
+            }
             return cp;
         }
     }
@@ -62,17 +88,36 @@ internal sealed class MainForm : Form
     protected override async void OnLoad(EventArgs e)
     {
         base.OnLoad(e);
-        Bounds = Screen.PrimaryScreen!.Bounds;   // borderless fullscreen on the primary monitor
+        if (!_testMode) Bounds = Screen.PrimaryScreen!.Bounds;   // borderless fullscreen on the primary monitor
         await InitWebViewAsync();
     }
 
     protected override void OnShown(EventArgs e)
     {
         base.OnShown(e);
-        Native.HideTaskbar();
-        Native.InstallKeyboardHook();
+
+        // --test leaves the taskbar and keys alone so the environment stays recoverable.
+        if (!_testMode)
+        {
+            Native.HideTaskbar();
+            Native.InstallKeyboardHook(blockCtrlCombos: _allowInput);
+        }
         if (_keepAwake) Native.PreventSleepAndDisplayOff();
-        SinkToBottom();
+
+        if (_allowInput)
+        {
+            // Take and hold the foreground; reclaim it when a spawned window closes.
+            Native.ForceForeground(Handle);
+            _web.Focus();
+            Native.StartForegroundWatch(Handle, () =>
+            {
+                if (!IsDisposed) { _web.Focus(); PostToWeb("focus"); }
+            });
+        }
+        else
+        {
+            SinkToBottom();
+        }
 
         _watchdog = new System.Windows.Forms.Timer { Interval = WatchdogMs };
         _watchdog.Tick += (_, _) =>
@@ -97,18 +142,23 @@ internal sealed class MainForm : Form
     {
         switch (m.Msg)
         {
-            case Native.WM_WINDOWPOSCHANGING:
-                // Re-assert rear-most on every z-order change so nothing can pull us forward.
+            case Native.WM_WINDOWPOSCHANGING when !_allowInput:
+                // Locked mode: re-assert rear-most on every z-order change.
                 var pos = Marshal.PtrToStructure<Native.WINDOWPOS>(m.LParam);
                 pos.hwndInsertAfter = Native.HWND_BOTTOM;
                 pos.flags &= ~Native.SWP_NOZORDER;
                 Marshal.StructureToPtr(pos, m.LParam, false);
                 break;
 
-            case Native.WM_MOUSEACTIVATE:
-                // Never activate on click — stay input-inert and in the rear.
+            case Native.WM_MOUSEACTIVATE when !_allowInput:
+                // Locked mode: never activate on click — stay input-inert and in the rear.
                 m.Result = (IntPtr)Native.MA_NOACTIVATE;
                 return;
+
+            case Native.WM_SYSCOMMAND when _allowInput && !_testMode:
+                // Input mode: refuse minimize so it can't be hidden out of the way.
+                if ((m.WParam.ToInt64() & 0xFFF0) == Native.SC_MINIMIZE) return;
+                break;
         }
         base.WndProc(ref m);
     }
@@ -144,6 +194,13 @@ internal sealed class MainForm : Form
     {
         string msg = e.TryGetWebMessageAsString();
 
+        // User keystrokes (xterm-encoded) forwarded to the console's stdin.
+        if (msg.Length >= 2 && msg[0] == 'i' && msg[1] == ':')
+        {
+            _pty?.WriteInput(msg.Substring(2));
+            return;
+        }
+
         if (msg == "ready")
         {
             if (!string.IsNullOrEmpty(_header))
@@ -153,6 +210,12 @@ internal sealed class MainForm : Form
 
             if (_logoServedName != null)
                 PostToWeb("l:" + _logoServedName);
+
+            if (_allowInput)
+            {
+                _web.Focus();
+                PostToWeb("input:1");   // tell the page to accept keystrokes and focus the terminal
+            }
             return;
         }
 
@@ -277,6 +340,7 @@ internal sealed class MainForm : Form
     protected override void OnFormClosing(FormClosingEventArgs e)
     {
         // Always restore the environment, even on unexpected close.
+        Native.StopForegroundWatch();
         Native.RemoveKeyboardHook();
         Native.RestoreTaskbar();
         Native.RestorePowerState();
