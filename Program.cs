@@ -20,6 +20,7 @@ internal static class Program
         bool allowInput = false; // default: display-only, no user input
         bool testMode = false;   // safety harness: titled window, taskbar shown, no key blocking
         bool showOnOutputOnly = false; // stay hidden until the command produces real output
+        bool hidden = false;           // run the command fully hidden — never show anything
         var command = new List<string>();
 
         int i = 0;
@@ -56,6 +57,11 @@ internal static class Program
             if (!inCommand && a == "--show-on-output-only")
             {
                 showOnOutputOnly = true;
+                i++; continue;
+            }
+            if (!inCommand && a == "--hidden")
+            {
+                hidden = true;
                 i++; continue;
             }
             if (!inCommand && (a == "--header" || a == "-h"))
@@ -97,7 +103,9 @@ internal static class Program
                 "  --allow-input           Accept keyboard input (focusable terminal); blocks Ctrl combos.\n" +
                 "  --test                  Safe testing: titled window, taskbar shown, no key blocking.\n" +
                 "  --show-on-output-only   Stay hidden until the command emits real output; a\n" +
-                "                          do-nothing run exits without ever showing the overlay.\n\n" +
+                "                          do-nothing run exits without ever showing the overlay.\n" +
+                "  --hidden                Run the command fully hidden: no window, no taskbar/key\n" +
+                "                          changes. For silent startup tasks (no console flash).\n\n" +
                 "Example:\n  kioskterm.exe --header \"Configuring Windows for first use...\" -- " +
                 "powershell -NoProfile -ExecutionPolicy Bypass -File C:\\setup.ps1",
                 "KioskTerm", System.Windows.Forms.MessageBoxButtons.OK,
@@ -118,7 +126,7 @@ internal static class Program
         System.Windows.Forms.Application.EnableVisualStyles();
         System.Windows.Forms.Application.SetCompatibleTextRenderingDefault(false);
 
-        using var form = new MainForm(header, commandLine, keepAwake, logoPath, allowInput, testMode, showOnOutputOnly);
+        using var form = new MainForm(header, commandLine, keepAwake, logoPath, allowInput, testMode, showOnOutputOnly, hidden);
         System.Windows.Forms.Application.Run(form);
         return form.ExitCode;
     }

@@ -15,6 +15,7 @@ internal sealed class MainForm : Form
     private readonly bool _allowInput;
     private readonly bool _testMode;
     private readonly bool _deferReveal;   // --show-on-output-only: stay parked off-screen until real output
+    private readonly bool _hidden;        // --hidden: run the command but never show anything
     private System.Drawing.Rectangle _targetBounds;
     private bool _revealed;
     private readonly ContentScanner _contentScanner = new();
@@ -33,7 +34,7 @@ internal sealed class MainForm : Form
     public int ExitCode { get; private set; }
 
     public MainForm(string? header, string commandLine, bool keepAwake, string? logoPath,
-                    bool allowInput, bool testMode, bool showOnOutputOnly)
+                    bool allowInput, bool testMode, bool showOnOutputOnly, bool hidden)
     {
         _header = header;
         _commandLine = commandLine;
@@ -41,7 +42,8 @@ internal sealed class MainForm : Form
         _logoPath = logoPath;
         _allowInput = allowInput;
         _testMode = testMode;
-        _deferReveal = showOnOutputOnly && !testMode;   // --test always shows immediately
+        _hidden = hidden;
+        _deferReveal = showOnOutputOnly && !testMode && !hidden;   // --test/--hidden override
 
         TopMost = false;
         BackColor = System.Drawing.Color.Black;
@@ -95,20 +97,22 @@ internal sealed class MainForm : Form
     {
         base.OnLoad(e);
         _targetBounds = _testMode ? Bounds : Screen.PrimaryScreen!.Bounds;
-        if (_deferReveal) Bounds = OffScreen(_targetBounds.Size);   // park off-screen, same size
-        else if (!_testMode) Bounds = _targetBounds;                // borderless fullscreen
+        if (_deferReveal || _hidden) Bounds = OffScreen(_targetBounds.Size);   // park off-screen, same size
+        else if (!_testMode) Bounds = _targetBounds;                           // borderless fullscreen
         await InitWebViewAsync();
     }
 
     protected override void OnShown(EventArgs e)
     {
         base.OnShown(e);
-        if (_keepAwake) Native.PreventSleepAndDisplayOff();   // keep awake even while processing pre-output
 
-        if (!_deferReveal)
+        // --hidden is a silent background run: no lockdown, no keep-awake, never shown.
+        if (_keepAwake && !_hidden) Native.PreventSleepAndDisplayOff();
+
+        if (!_deferReveal && !_hidden)
             Reveal();
-        // else: stay parked off-screen with no lockdown until the command emits
-        // real output (see StartPty); a do-nothing runner exits invisibly.
+        // else: stay parked off-screen — until real output (--show-on-output-only)
+        // or forever (--hidden / a do-nothing runner exits invisibly).
 
         _watchdog = new System.Windows.Forms.Timer { Interval = WatchdogMs };
         _watchdog.Tick += (_, _) =>
@@ -127,7 +131,7 @@ internal sealed class MainForm : Form
     // show, or is deferred to the first real output under --show-on-output-only.
     private void Reveal()
     {
-        if (_revealed) return;
+        if (_hidden || _revealed) return;   // --hidden never shows, even on errors
         _revealed = true;
 
         Bounds = _targetBounds;   // on-screen (a no-op unless we were parked off-screen)

@@ -44,6 +44,9 @@ required on the target. All builds are on the
 - **Deferred reveal** (`--show-on-output-only`) — start a command but only take
   over the screen once it emits real output, so a runner with nothing to do
   never disturbs the user.
+- **Fully hidden** (`--hidden`) — run a command silently with no window at all,
+  for startup tasks that shouldn't flash a console window (ConPTY means the
+  command runs without a visible console).
 - Ships as a **single self-contained `.exe`** — no .NET or other dependency on
   the target machine (only the WebView2 runtime, which is present on current
   Windows 10/11).
@@ -65,6 +68,7 @@ Everything after `--` is the command run inside the pseudo-console (ConPTY).
 | `--allow-input`, `--input` | Make the terminal focusable and accept typing (see [Modes](#modes)). Blocks all `Ctrl` combos and `Alt+Tab`. |
 | `--test` | Safe testing harness — titled resizable window, taskbar visible, **no key blocking**, so you can always recover the session. |
 | `--show-on-output-only` | Start the command but stay hidden (no taskbar hiding, no key blocking) until it emits its first real output. A run that does nothing and exits never shows the overlay at all. |
+| `--hidden` | Run the command **fully hidden** — never show a window, never touch the taskbar or keys, don't keep the machine awake. For silent startup tasks that shouldn't flash a console window. |
 | `--` | Separator; everything after it is the command and its arguments. |
 
 ### Examples
@@ -94,6 +98,12 @@ runner actually produces output:
 
 ```powershell
 kioskterm.exe --show-on-output-only --header "Applying updates..." -- C:\provision\run-pending.cmd
+```
+
+Run a startup task silently — no window, no console flash:
+
+```powershell
+kioskterm.exe --hidden -- powershell -NoProfile -File C:\provision\housekeeping.ps1
 ```
 
 > **PowerShell argument quoting:** call the exe directly (`& kioskterm.exe ...`)
