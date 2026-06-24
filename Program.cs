@@ -21,6 +21,9 @@ internal static class Program
         bool testMode = false;   // safety harness: titled window, taskbar shown, no key blocking
         bool showOnOutputOnly = false; // stay hidden until the command produces real output
         bool hidden = false;           // run the command fully hidden — never show anything
+        string? logPath = null;        // processed, human-readable session log
+        string? logRawPath = null;     // optional raw byte-stream log
+        bool logTimestamps = false;    // prepend [HH:mm:ss] to each logged line
         var command = new List<string>();
 
         int i = 0;
@@ -64,6 +67,31 @@ internal static class Program
                 hidden = true;
                 i++; continue;
             }
+            if (!inCommand && a == "--log")
+            {
+                if (i + 1 < rawArgs.Length) { logPath = rawArgs[i + 1]; i += 2; continue; }
+                i++; continue;
+            }
+            if (!inCommand && a.StartsWith("--log="))
+            {
+                logPath = a.Substring("--log=".Length);
+                i++; continue;
+            }
+            if (!inCommand && a == "--log-raw")
+            {
+                if (i + 1 < rawArgs.Length) { logRawPath = rawArgs[i + 1]; i += 2; continue; }
+                i++; continue;
+            }
+            if (!inCommand && a.StartsWith("--log-raw="))
+            {
+                logRawPath = a.Substring("--log-raw=".Length);
+                i++; continue;
+            }
+            if (!inCommand && a == "--log-timestamps")
+            {
+                logTimestamps = true;
+                i++; continue;
+            }
             if (!inCommand && (a == "--header" || a == "-h"))
             {
                 if (i + 1 < rawArgs.Length) { header = rawArgs[i + 1]; i += 2; continue; }
@@ -105,7 +133,11 @@ internal static class Program
                 "  --show-on-output-only   Stay hidden until the command emits real output; a\n" +
                 "                          do-nothing run exits without ever showing the overlay.\n" +
                 "  --hidden                Run the command fully hidden: no window, no taskbar/key\n" +
-                "                          changes. For silent startup tasks (no console flash).\n\n" +
+                "                          changes. For silent startup tasks (no console flash).\n" +
+                "  --log <path>            Write a human-readable log of the full session output\n" +
+                "                          (escape sequences stripped) to <path>, flushed per line.\n" +
+                "  --log-raw <path>        Also write the unmodified raw output stream to <path>.\n" +
+                "  --log-timestamps        Prepend [HH:mm:ss] to each logged line.\n\n" +
                 "Example:\n  kioskterm.exe --header \"Configuring Windows for first use...\" -- " +
                 "powershell -NoProfile -ExecutionPolicy Bypass -File C:\\setup.ps1",
                 "KioskTerm", System.Windows.Forms.MessageBoxButtons.OK,
@@ -126,7 +158,8 @@ internal static class Program
         System.Windows.Forms.Application.EnableVisualStyles();
         System.Windows.Forms.Application.SetCompatibleTextRenderingDefault(false);
 
-        using var form = new MainForm(header, commandLine, keepAwake, logoPath, allowInput, testMode, showOnOutputOnly, hidden);
+        using var form = new MainForm(header, commandLine, keepAwake, logoPath, allowInput, testMode,
+            showOnOutputOnly, hidden, logPath, logRawPath, logTimestamps);
         System.Windows.Forms.Application.Run(form);
         return form.ExitCode;
     }

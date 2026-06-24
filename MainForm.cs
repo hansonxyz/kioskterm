@@ -16,6 +16,10 @@ internal sealed class MainForm : Form
     private readonly bool _testMode;
     private readonly bool _deferReveal;   // --show-on-output-only: stay parked off-screen until real output
     private readonly bool _hidden;        // --hidden: run the command but never show anything
+    private readonly string? _logPath;
+    private readonly string? _logRawPath;
+    private readonly bool _logTimestamps;
+    private SessionLogger? _logger;
     private System.Drawing.Rectangle _targetBounds;
     private bool _revealed;
     private readonly ContentScanner _contentScanner = new();
@@ -34,7 +38,8 @@ internal sealed class MainForm : Form
     public int ExitCode { get; private set; }
 
     public MainForm(string? header, string commandLine, bool keepAwake, string? logoPath,
-                    bool allowInput, bool testMode, bool showOnOutputOnly, bool hidden)
+                    bool allowInput, bool testMode, bool showOnOutputOnly, bool hidden,
+                    string? logPath, string? logRawPath, bool logTimestamps)
     {
         _header = header;
         _commandLine = commandLine;
@@ -43,6 +48,9 @@ internal sealed class MainForm : Form
         _allowInput = allowInput;
         _testMode = testMode;
         _hidden = hidden;
+        _logPath = logPath;
+        _logRawPath = logRawPath;
+        _logTimestamps = logTimestamps;
         _deferReveal = showOnOutputOnly && !testMode && !hidden;   // --test/--hidden override
 
         TopMost = false;
@@ -292,9 +300,15 @@ internal sealed class MainForm : Form
 
     private void StartPty(short cols, short rows)
     {
+        // Full-session logging is orthogonal to display mode (works with --hidden,
+        // --show-on-output-only, --test, etc.) and never changes on-screen behavior.
+        _logger = SessionLogger.TryCreate(_logPath, _logRawPath, _logTimestamps);
+
         _pty = new ConPty();
         _pty.Output += chunk =>
         {
+            _logger?.Append(chunk);   // capture on the read thread, independent of the UI
+
             // Marshal to the UI thread; WebView2 is single-threaded.
             if (IsDisposed) return;
             try
@@ -312,6 +326,8 @@ internal sealed class MainForm : Form
         };
         _pty.Exited += code =>
         {
+            _logger?.Close();   // ConPty joined the read thread, so the full tail is captured
+
             if (IsDisposed) return;
             try
             {
@@ -414,6 +430,7 @@ internal sealed class MainForm : Form
             _watchdog?.Dispose();
             _shellWatch?.Dispose();
             _pty?.Dispose();
+            _logger?.Dispose();   // idempotent; flushes a trailing partial line if the command was killed
             try { if (_tempDir != null && Directory.Exists(_tempDir)) Directory.Delete(_tempDir, true); }
             catch { /* best effort */ }
         }

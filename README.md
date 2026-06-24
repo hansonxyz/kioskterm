@@ -38,6 +38,10 @@ required on the target. All builds are on the
   logo pinned top-right, sized to the header height.
 - **Auto-hides the mouse cursor** after a couple seconds idle over the window
   (like a video player); it returns on movement.
+- **Logs the full session** (`--log`) — captures the entire terminal byte stream
+  (including output from native console programs that ConPTY renders) to a
+  greppable text file, flushed continuously so a mid-run reboot still leaves a
+  usable log.
 - **Auto-exits** when the wrapped command exits, restoring the environment.
 - **Display-only by default**, or a focusable **input mode** for interactive
   scripts (see [Modes](#modes)).
@@ -69,6 +73,9 @@ Everything after `--` is the command run inside the pseudo-console (ConPTY).
 | `--test` | Safe testing harness — titled resizable window, taskbar visible, **no key blocking**, so you can always recover the session. |
 | `--show-on-output-only` | Start the command but stay hidden (no taskbar hiding, no key blocking) until it emits its first real output. A run that does nothing and exits never shows the overlay at all. |
 | `--hidden` | Run the command **fully hidden** — never show a window, never touch the taskbar or keys, don't keep the machine awake. For silent startup tasks that shouldn't flash a console window. |
+| `--log <path>` | Write a human-readable log of the **full session output** to `<path>` — escape sequences stripped, progress-bar redraws collapsed to their final line. Parent dirs are created, the file is overwritten, UTF-8 (no BOM). Flushed continuously, so a mid-run reboot/crash still leaves a log of everything up to the cut. Works in every display mode (including `--hidden`). |
+| `--log-raw <path>` | Also write the **unmodified raw** output byte stream to `<path>` (byte-level fidelity). |
+| `--log-timestamps` | Prepend `[HH:mm:ss]` to each logged line. |
 | `--` | Separator; everything after it is the command and its arguments. |
 
 ### Examples
@@ -104,6 +111,13 @@ Run a startup task silently — no window, no console flash:
 
 ```powershell
 kioskterm.exe --hidden -- powershell -NoProfile -File C:\provision\housekeeping.ps1
+```
+
+Log every run to a timestamped file (cheap enough to leave on permanently):
+
+```powershell
+kioskterm.exe --log C:\_provision\logs\kiosk-20260624-141500.log --header "Configuring..." `
+              -- powershell -NoProfile -File C:\setup.ps1
 ```
 
 > **PowerShell argument quoting:** call the exe directly (`& kioskterm.exe ...`)

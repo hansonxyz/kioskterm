@@ -14,6 +14,7 @@ dist-fd/
 
 # Throwaway test / verification artifacts
 verify-*.png
+logtest/
 
 # Logs and temp files
 *.log

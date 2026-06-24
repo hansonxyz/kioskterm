@@ -148,6 +148,10 @@ internal sealed class ConPty : IDisposable
         // Closing the pseudo-console flushes remaining output then EOFs the read loop.
         if (_hPC != IntPtr.Zero) { ClosePseudoConsole(_hPC); _hPC = IntPtr.Zero; }
 
+        // Wait for the read loop to drain the final output before signaling exit, so
+        // consumers (e.g. the session log) capture the complete tail with no race.
+        _readThread?.Join(2000);
+
         Exited?.Invoke(unchecked((int)code));
     }
 
