@@ -142,7 +142,7 @@ internal static class Program
                 "powershell -NoProfile -ExecutionPolicy Bypass -File C:\\setup.ps1",
                 "KioskTerm", System.Windows.Forms.MessageBoxButtons.OK,
                 System.Windows.Forms.MessageBoxIcon.Information);
-            return 1;
+            return MainForm.ExitUsage;
         }
 
         string commandLine = BuildCommandLine(command);

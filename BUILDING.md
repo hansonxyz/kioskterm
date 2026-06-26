@@ -58,7 +58,7 @@ with no .NET installed.
 kioskterm.csproj      Project + single-file publish settings; embeds web\ as resources
 app.manifest         asInvoker + DPI awareness (PerMonitorV2 via project property)
 Program.cs           Entry point: CLI parsing (--header/--logo/--minimize-others/--allow-sleep/--allow-input/--test/--show-on-output-only/--hidden/--log[-raw|-timestamps], -- command)
-MainForm.cs          WinForms host (locked vs input mode); WebView2 init, IPC, input forwarding, session logging, watchdog, temp asset extraction
+MainForm.cs          WinForms host (locked vs input mode); WebView2 init with retry + headless fallback, IPC, input forwarding, session logging, watchdog, temp asset extraction
 ConPty.cs            ConPTY pseudo-console: spawn the command, stream VT output, write stdin, resize, exit handling
 SessionLogger.cs     --log: VT-stripping line engine -> greppable text log (+ optional raw log); flushed continuously for reboot survival
 Native.cs            Win32: taskbar hide/restore, HWND_BOTTOM rear-most, keyboard hook, keep-awake, minimize-all, foreground grab/reclaim, Start-menu dismiss

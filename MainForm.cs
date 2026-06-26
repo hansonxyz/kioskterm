@@ -31,9 +31,21 @@ internal sealed class MainForm : Form
     private System.Windows.Forms.Timer? _watchdog;
     private System.Windows.Forms.Timer? _shellWatch;
 
-    // Fail-safe: if the WebView/terminal never gets far enough to start the
-    // command within this window, tear down rather than sit fullscreen forever.
+    // Fail-safe: if the renderer comes up but the terminal never starts within this
+    // window, run the command headless rather than hang.
     private const int WatchdogMs = 20000;
+
+    // How long to keep retrying WebView2 environment/controller creation before
+    // giving up and running headless (rides out the transient 0x80070490 seen mid
+    // Edge/WebView2 update or very early in a post-update auto-logon).
+    private const int WebView2InitBudgetSec = 30;
+
+    // Distinct exit codes for KioskTerm's own failures (vs. the wrapped command's
+    // pass-through code). 64/66 chosen from the conventional sysexits range.
+    public const int ExitUsage = 64;
+    public const int ExitCommandLaunchFailed = 66;
+
+    private string? _startupError;   // WebView2 init failure detail (for the headless banner)
 
     public int ExitCode { get; private set; }
 
@@ -105,34 +117,20 @@ internal sealed class MainForm : Form
     {
         base.OnLoad(e);
         _targetBounds = _testMode ? Bounds : Screen.PrimaryScreen!.Bounds;
-        if (_deferReveal || _hidden) Bounds = OffScreen(_targetBounds.Size);   // park off-screen, same size
-        else if (!_testMode) Bounds = _targetBounds;                           // borderless fullscreen
+        // Park off-screen during init for every mode; we only come on-screen / lock
+        // down once the renderer is actually ready. That way a long WebView2 retry
+        // never leaves a black locked screen, and a fatal failure falls back cleanly.
+        Bounds = OffScreen(_targetBounds.Size);
         await InitWebViewAsync();
     }
 
     protected override void OnShown(EventArgs e)
     {
         base.OnShown(e);
-
-        // --hidden is a silent background run: no lockdown, no keep-awake, never shown.
+        // Keep the machine awake while provisioning (not for silent --hidden runs).
+        // Reveal/lockdown and the watchdog are wired once WebView2 is confirmed ready
+        // (see InitWebViewAsync), so a long WebView2 retry doesn't lock a black screen.
         if (_keepAwake && !_hidden) Native.PreventSleepAndDisplayOff();
-
-        if (!_deferReveal && !_hidden)
-            Reveal();
-        // else: stay parked off-screen — until real output (--show-on-output-only)
-        // or forever (--hidden / a do-nothing runner exits invisibly).
-
-        _watchdog = new System.Windows.Forms.Timer { Interval = WatchdogMs };
-        _watchdog.Tick += (_, _) =>
-        {
-            _watchdog!.Stop();
-            if (!_ptyStarted)
-            {
-                ExitCode = 2;   // never started — signal failure to the caller
-                Close();
-            }
-        };
-        _watchdog.Start();
     }
 
     // Brings the overlay on-screen and engages the lockdown. Runs immediately on
@@ -223,13 +221,20 @@ internal sealed class MainForm : Form
 
     private async Task InitWebViewAsync()
     {
+        // --hidden never renders, so skip WebView2 entirely: no dependency on it, no
+        // startup wait, and robust to early-boot / non-interactive (e.g. SSH) sessions.
+        if (_hidden) { RunHeadless(null); return; }
+
         _tempDir = ExtractWebAssets();
         _logoServedName = CopyLogo(_tempDir);
 
-        string userData = Path.Combine(Path.GetTempPath(), "kioskterm-wv2-" +
-            Environment.ProcessId.ToString());
-        var env = await CoreWebView2Environment.CreateAsync(null, userData);
-        await _web.EnsureCoreWebView2Async(env);
+        if (!await TryInitWebView2())
+        {
+            // WebView2 could not initialize even after retrying. Run the command
+            // anyway (no overlay) so provisioning is never blocked.
+            RunHeadless(_startupError);
+            return;
+        }
 
         var core = _web.CoreWebView2;
 
@@ -246,6 +251,75 @@ internal sealed class MainForm : Form
         core.SetVirtualHostNameToFolderMapping(
             "kioskterm.local", _tempDir, CoreWebView2HostResourceAccessKind.Allow);
         core.Navigate("https://kioskterm.local/index.html");
+
+        // Renderer is up; guard that the page actually starts the terminal.
+        StartWatchdog();
+    }
+
+    // Creates the WebView2 environment + controller, retrying briefly to ride out the
+    // transient "element not found" (0x80070490) seen mid Edge/WebView2 update or very
+    // early in a post-update auto-logon. Returns false (and records the error) if it
+    // never succeeds within the budget.
+    private async Task<bool> TryInitWebView2()
+    {
+        string userData = Path.Combine(Path.GetTempPath(), "kioskterm-wv2-" +
+            Environment.ProcessId.ToString());
+
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        Exception? last = null;
+        int attempts = 0;
+        while (true)
+        {
+            attempts++;
+            try
+            {
+                var env = await CoreWebView2Environment.CreateAsync(null, userData);
+                await _web.EnsureCoreWebView2Async(env);
+                return true;
+            }
+            catch (Exception ex) { last = ex; }
+
+            if (IsDisposed || sw.Elapsed.TotalSeconds >= WebView2InitBudgetSec) break;
+            try { await Task.Delay(2000); } catch { }
+        }
+        RecordStartupFailure(last, attempts);
+        return false;
+    }
+
+    private void StartWatchdog()
+    {
+        _watchdog = new System.Windows.Forms.Timer { Interval = WatchdogMs };
+        _watchdog.Tick += (_, _) =>
+        {
+            _watchdog!.Stop();
+            // Renderer came up but the page never started the terminal: run the
+            // command headless rather than hang or exit silently.
+            if (!_ptyStarted) RunHeadless("kioskterm: terminal did not start — running headless");
+        };
+        _watchdog.Start();
+    }
+
+    // Runs the wrapped command with no overlay (WebView2 bypassed for --hidden,
+    // failed to initialize, or the terminal never handshook). The command still runs
+    // and --log still captures it; only the on-screen overlay is absent.
+    private void RunHeadless(string? reason)
+    {
+        if (_ptyStarted) return;
+        _ptyStarted = true;
+        _watchdog?.Stop();
+        StartPty(120, 40, reason);   // default size; output still captured by --log
+    }
+
+    // Surfaces a WebView2 startup failure everywhere useful (the bug being that this
+    // was previously swallowed): stderr, the dedicated error log, and — via the
+    // headless banner — the --log file.
+    private void RecordStartupFailure(Exception? ex, int attempts)
+    {
+        string hr = ex != null ? $"0x{(uint)ex.HResult:X8}" : "n/a";
+        _startupError = $"kioskterm: WebView2 init failed after {attempts} attempt(s) over " +
+                        $"{WebView2InitBudgetSec}s: {hr} {ex?.GetType().Name}: {ex?.Message}".Trim();
+        try { Console.Error.WriteLine(_startupError); } catch { }
+        try { File.AppendAllText(Path.Combine(Path.GetTempPath(), "kioskterm-error.log"), _startupError + "\r\n"); } catch { }
     }
 
     private void OnWebMessage(object? sender, CoreWebView2WebMessageReceivedEventArgs e)
@@ -261,6 +335,9 @@ internal sealed class MainForm : Form
 
         if (msg == "ready")
         {
+            // Renderer is up: reveal the overlay now (deferred/hidden modes don't).
+            if (!_deferReveal && !_hidden) Reveal();
+
             if (!string.IsNullOrEmpty(_header))
                 PostToWeb("h:" + NormalizeHeader(_header));
             else if (_logoServedName != null)
@@ -298,11 +375,12 @@ internal sealed class MainForm : Form
         }
     }
 
-    private void StartPty(short cols, short rows)
+    private void StartPty(short cols, short rows, string? banner = null)
     {
         // Full-session logging is orthogonal to display mode (works with --hidden,
         // --show-on-output-only, --test, etc.) and never changes on-screen behavior.
         _logger = SessionLogger.TryCreate(_logPath, _logRawPath, _logTimestamps);
+        if (!string.IsNullOrEmpty(banner)) _logger?.WriteBanner(banner);
 
         _pty = new ConPty();
         _pty.Output += chunk =>
@@ -347,19 +425,29 @@ internal sealed class MainForm : Form
         catch (Exception ex)
         {
             int code = ex is System.ComponentModel.Win32Exception w ? w.NativeErrorCode : -1;
-            string detail = $"Failed to start command (win32={code}): {ex.Message}\r\ncommand line: {_commandLine}";
+            string detail = $"kioskterm: failed to start command (win32={code}): {ex.Message}\r\ncommand line: {_commandLine}";
 
-            try { File.WriteAllText(Path.Combine(Path.GetTempPath(), "kioskterm-error.log"), detail + "\r\n" + ex); }
+            try { File.AppendAllText(Path.Combine(Path.GetTempPath(), "kioskterm-error.log"), detail + "\r\n" + ex + "\r\n"); }
             catch { /* best effort */ }
+            try { Console.Error.WriteLine(detail); } catch { }
+            _logger?.WriteBanner(detail);
 
-            Reveal();   // a launch failure is worth showing even under --show-on-output-only
-            PostToWeb("o:" + Convert.ToBase64String(
-                Encoding.UTF8.GetBytes("\r\n\x1b[31m" + detail.Replace("\r\n", "\r\n") + "\x1b[0m\r\n")));
-
-            // Don't sit fullscreen on a dead command — surface briefly then exit.
-            var bail = new System.Windows.Forms.Timer { Interval = 4000 };
-            bail.Tick += (_, _) => { bail.Stop(); ExitCode = 3; Close(); };
-            bail.Start();
+            // Show the error only if there's actually a renderer; headless runs just log it.
+            if (_web.CoreWebView2 != null)
+            {
+                Reveal();
+                PostToWeb("o:" + Convert.ToBase64String(
+                    Encoding.UTF8.GetBytes("\r\n\x1b[31m" + detail + "\x1b[0m\r\n")));
+                // Don't sit on a dead command — surface briefly then exit.
+                var bail = new System.Windows.Forms.Timer { Interval = 4000 };
+                bail.Tick += (_, _) => { bail.Stop(); ExitCode = ExitCommandLaunchFailed; Close(); };
+                bail.Start();
+            }
+            else
+            {
+                ExitCode = ExitCommandLaunchFailed;
+                Close();
+            }
         }
     }
 

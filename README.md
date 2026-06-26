@@ -146,14 +146,41 @@ when that window closes.
 
 - **`--test`** removes the lockdowns (titled window with a close button, visible
   taskbar, no key hook) — use it while iterating so a bug can't trap you.
-- **Watchdog:** if the terminal fails to start within 20 s, KioskTerm exits
-  (code `2`) rather than sitting on a frozen fullscreen window.
-- **Launch failure:** if the command can't be started, the error is shown
-  briefly, written to `%TEMP%\kioskterm-error.log`, and the app exits (code `3`).
+- **Watchdog:** if the renderer comes up but the terminal never starts within
+  20 s, KioskTerm runs the command headless rather than sitting on a frozen
+  window (see [Startup resilience](#startup-resilience)).
+- **Launch failure:** if the command itself can't be started, the error is
+  logged (stderr, `%TEMP%\kioskterm-error.log`, and `--log`) and KioskTerm exits
+  with code `66`.
 - **`Ctrl+Alt+Del`** always works — the intended last-resort escape hatch.
 
-The exit code mirrors the wrapped command's exit code, except for the special
-cases above (and `1` for invalid usage / no command).
+## Startup resilience
+
+KioskTerm depends on the WebView2 runtime to render, which can be transiently
+unavailable very early in a post-update auto-logon or mid Edge/WebView2 update
+(`0x80070490` "element not found"). To keep provisioning robust:
+
+- **Retry:** WebView2 environment/controller creation is retried every 2s for up
+  to 30s to ride out the transient. During retries the desktop stays normal (the
+  overlay isn't shown and nothing is locked down) until the renderer is ready.
+- **Headless fallback:** if WebView2 still can't initialize, the wrapped command
+  is run anyway through ConPTY with **no overlay** — provisioning is never blocked
+  by the renderer. `--log` still captures everything.
+- **`--hidden` skips WebView2 entirely** — it never renders, so it has no
+  dependency on (and no wait for) WebView2 at all.
+- **No silent failures:** a WebView2 startup failure is written (with its HRESULT)
+  to stderr, `%TEMP%\kioskterm-error.log`, and the `--log` file.
+
+### Exit codes
+
+| Code | Meaning |
+|---|---|
+| *(command's code)* | The wrapped command's exit code (the normal case, including headless fallback). |
+| `64` | Invalid usage / no command given. |
+| `66` | The wrapped command could not be launched (e.g. executable not found). |
+
+KioskTerm uses the distinct `64`/`66` for its own failures so they're
+distinguishable from the wrapped command's exit code.
 
 ## Requirements
 

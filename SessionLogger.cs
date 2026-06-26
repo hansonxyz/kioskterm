@@ -192,6 +192,23 @@ internal sealed class SessionLogger : IDisposable
         _text.Flush();
     }
 
+    /// <summary>Writes a KioskTerm status line (e.g. a headless-fallback notice) into the log.</summary>
+    public void WriteBanner(string text)
+    {
+        lock (_sync)
+        {
+            if (_closed || _text == null) return;
+            _sawContent = true;             // a banner is real content, not leading paint
+            _lineStamp = DateTime.Now;
+            byte[] bytes = Encoding.UTF8.GetBytes(Stamp() + text + "\r\n");
+            _text.Position = _committedLen;
+            _text.Write(bytes, 0, bytes.Length);
+            _committedLen = _text.Position;
+            _text.SetLength(_committedLen);
+            try { _text.Flush(flushToDisk: true); } catch { _text.Flush(); }
+        }
+    }
+
     public void Close()
     {
         lock (_sync)

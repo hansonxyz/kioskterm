@@ -54,6 +54,18 @@ Notes:
 - The single-file exe is ~69 MB (bundled .NET runtime); well under GitHub's asset limit.
 - Deploys/releases are user-gated — only push or release when explicitly asked.
 
+## Behavior notes
+
+- WebView2 can be transiently unavailable early in a post-update auto-logon
+  (`0x80070490`). Startup retries env/controller creation every 2s for 30s, then
+  falls back to running the command **headless** (no overlay) so provisioning is
+  never blocked. `--hidden` skips WebView2 entirely. Failures go to stderr,
+  `%TEMP%\kioskterm-error.log`, and the `--log` file.
+- To force a WebView2 failure for testing: set
+  `WEBVIEW2_BROWSER_EXECUTABLE_FOLDER` to a nonexistent path before launching.
+- Exit codes: wrapped command's code passes through; `64` = bad usage,
+  `66` = command could not be launched.
+
 ## Manual testing patterns
 
 - The locked overlay hides the taskbar and blocks keys, so testing it live is
